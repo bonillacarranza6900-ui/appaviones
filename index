@@ -1,0 +1,412 @@
+```html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberPulse Vector - Starfighter Rush</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+    body {
+      background-color: #050508;
+      color: #00f0ff;
+      font-family: 'Share Tech Mono', monospace;
+      overflow: hidden;
+      margin: 0;
+      user-select: none;
+    }
+
+    .font-orbitron {
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    .neon-text {
+      text-shadow: 0 0 10px rgba(0, 240, 255, 0.7), 0 0 20px rgba(0, 240, 255, 0.5);
+    }
+
+    .neon-pink {
+      text-shadow: 0 0 10px rgba(255, 0, 127, 0.7), 0 0 20px rgba(255, 0, 127, 0.5);
+    }
+
+    .neon-box {
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.3), inset 0 0 15px rgba(0, 240, 255, 0.2);
+      border: 1px solid #00f0ff;
+    }
+
+    .scanline {
+      background: linear-gradient(
+        to bottom,
+        rgba(255,255,255,0),
+        rgba(255,255,255,0) 50%,
+        rgba(0, 0, 0, 0.3) 50%,
+        rgba(0, 0, 0, 0.3)
+      );
+      background-size: 100% 4px;
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between items-center relative">
+
+  <!-- HUD Header -->
+  <header class="w-full max-w-4xl p-4 flex justify-between items-center z-10 border-b border-cyan-900/50 bg-slate-950/80 backdrop-blur-md">
+    <div>
+      <h1 class="text-xl md:text-2xl font-bold font-orbitron tracking-wider text-cyan-400 neon-text">
+        CYBERPULSE <span class="text-pink-500 neon-pink">VECTOR</span>
+      </h1>
+      <p class="text-xs text-cyan-600">SYSTEM: STARFIGHTER PROTOCOL v2.5</p>
+    </div>
+    
+    <div class="flex gap-6 text-center">
+      <div>
+        <div class="text-xs text-cyan-500 uppercase font-orbitron">Puntos</div>
+        <div id="score" class="text-2xl font-black text-cyan-300 font-orbitron">000000</div>
+      </div>
+      <div>
+        <div class="text-xs text-pink-500 uppercase font-orbitron">Nivel</div>
+        <div id="level" class="text-2xl font-black text-pink-500 font-orbitron">1</div>
+      </div>
+      <div>
+        <div class="text-xs text-amber-500 uppercase font-orbitron">Escudo</div>
+        <div id="shield" class="text-2xl font-black text-amber-400 font-orbitron">100%</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Area de Juego / Canvas -->
+  <main class="relative flex-grow w-full max-w-4xl my-2 flex items-center justify-center overflow-hidden rounded-lg neon-box bg-slate-950">
+    <canvas id="gameCanvas" class="w-full h-full block"></canvas>
+    
+    <!-- Scanlines Overlay -->
+    <div class="absolute inset-0 scanline pointer-events-none opacity-40"></div>
+
+    <!-- UI Overlay: Start / Game Over -->
+    <div id="uiOverlay" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-20">
+      <h2 id="uiTitle" class="text-4xl md:text-6xl font-black font-orbitron text-cyan-400 neon-text mb-4">
+        STARFIGHTER RUSH
+      </h2>
+      <p id="uiSubtitle" class="text-sm md:text-base text-cyan-200 max-w-md mb-8">
+        Usa <span class="text-pink-400 font-bold">A / D</span> o las <span class="text-pink-400 font-bold">Flechas</span> para moverte. Presiona <span class="text-pink-400 font-bold">Espacio</span> para disparar.
+      </p>
+      <button id="startBtn" class="px-8 py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black font-orbitron rounded tracking-widest transition-all duration-200 hover:scale-105 shadow-[0_0_20px_rgba(0,240,255,0.8)]">
+        INICIAR MISIÓN
+      </button>
+    </div>
+  </main>
+
+  <!-- Controls / Footer -->
+  <footer class="w-full max-w-4xl p-2 mb-2 flex justify-between items-center text-xs text-cyan-700 border-t border-cyan-900/30">
+    <span>CONTROLES: [A/D] Izq/Der | [ESPACIO] Disparo</span>
+    <span>ESTADO: <span id="statusText" class="text-emerald-400">EN ESPERA</span></span>
+  </footer>
+
+  <!-- Lógica del Juego -->
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const scoreEl = document.getElementById('score');
+    const levelEl = document.getElementById('level');
+    const shieldEl = document.getElementById('shield');
+    const uiOverlay = document.getElementById('uiOverlay');
+    const uiTitle = document.getElementById('uiTitle');
+    const uiSubtitle = document.getElementById('uiSubtitle');
+    const startBtn = document.getElementById('startBtn');
+    const statusText = document.getElementById('statusText');
+
+    let animationId;
+    let gameActive = false;
+    let score = 0;
+    let level = 1;
+    let keys = {};
+
+    // Ajustar tamaño del Canvas dinámicamente
+    function resizeCanvas() {
+      const container = canvas.parentElement;
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Nave del Jugador
+    const player = {
+      x: canvas.width / 2,
+      y: canvas.height - 60,
+      width: 40,
+      height: 40,
+      speed: 7,
+      shield: 100,
+      color: '#00f0ff',
+      lastShot: 0,
+      shootDelay: 150
+    };
+
+    let bullets = [];
+    let enemies = [];
+    let particles = [];
+    let stars = [];
+
+    // Inicializar Fondo Estelar (Efecto Synthwave Grid / Stars)
+    function initStars() {
+      stars = [];
+      for (let i = 0; i < 80; i++) {
+        stars.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          size: Math.random() * 2 + 0.5,
+          speed: Math.random() * 3 + 0.5
+        });
+      }
+    }
+
+    // Controles
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    startBtn.addEventListener('click', startGame);
+
+    function startGame() {
+      score = 0;
+      level = 1;
+      player.shield = 100;
+      player.x = canvas.width / 2 - player.width / 2;
+      bullets = [];
+      enemies = [];
+      particles = [];
+      gameActive = true;
+
+      updateHUD();
+      initStars();
+
+      uiOverlay.classList.add('hidden');
+      statusText.textContent = "COMBATE ACTIVO";
+      statusText.className = "text-emerald-400";
+
+      cancelAnimationFrame(animationId);
+      gameLoop();
+    }
+
+    function gameOver() {
+      gameActive = false;
+      uiTitle.textContent = "MISIÓN FALLIDA";
+      uiTitle.className = "text-4xl md:text-6xl font-black font-orbitron text-pink-500 neon-pink mb-4";
+      uiSubtitle.textContent = `Puntaje final: ${score} | Nivel alcanzado: ${level}`;
+      startBtn.textContent = "REINTENTAR";
+      uiOverlay.classList.remove('hidden');
+      statusText.textContent = "NAVE DESTRUIDA";
+      statusText.className = "text-pink-500";
+    }
+
+    function updateHUD() {
+      scoreEl.textContent = String(score).padStart(6, '0');
+      levelEl.textContent = level;
+      shieldEl.textContent = `${Math.max(0, player.shield)}%`;
+    }
+
+    function spawnEnemy() {
+      const spawnRate = Math.max(0.01, 0.02 + (level * 0.005));
+      if (Math.random() < spawnRate) {
+        const size = Math.random() * 20 + 20;
+        enemies.push({
+          x: Math.random() * (canvas.width - size),
+          y: -size,
+          width: size,
+          height: size,
+          speed: Math.random() * 2 + 1 + (level * 0.3),
+          hp: Math.ceil(size / 15),
+          maxHp: Math.ceil(size / 15),
+          color: '#ff007f'
+        });
+      }
+    }
+
+    function createExplosion(x, y, color) {
+      for (let i = 0; i < 15; i++) {
+        particles.push({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 6,
+          vy: (Math.random() - 0.5) * 6,
+          size: Math.random() * 3 + 1,
+          color: color,
+          alpha: 1
+        });
+      }
+    }
+
+    function update() {
+      // Movimiento Nave
+      if ((keys['ArrowLeft'] || keys['KeyA']) && player.x > 0) {
+        player.x -= player.speed;
+      }
+      if ((keys['ArrowRight'] || keys['KeyD']) && player.x < canvas.width - player.width) {
+        player.x += player.speed;
+      }
+
+      // Disparo
+      const now = Date.now();
+      if (keys['Space'] && now - player.lastShot > player.shootDelay) {
+        bullets.push({
+          x: player.x + player.width / 2 - 2,
+          y: player.y,
+          width: 4,
+          height: 12,
+          speed: 10
+        });
+        player.lastShot = now;
+      }
+
+      // Estrellas
+      stars.forEach(star => {
+        star.y += star.speed;
+        if (star.y > canvas.height) {
+          star.y = 0;
+          star.x = Math.random() * canvas.width;
+        }
+      });
+
+      // Balas
+      bullets.forEach((b, index) => {
+        b.y -= b.speed;
+        if (b.y < 0) bullets.splice(index, 1);
+      });
+
+      // Enemigos
+      spawnEnemy();
+      enemies.forEach((enemy, eIndex) => {
+        enemy.y += enemy.speed;
+
+        // Colisión Enemigo vs Nave
+        if (
+          player.x < enemy.x + enemy.width &&
+          player.x + player.width > enemy.x &&
+          player.y < enemy.y + enemy.height &&
+          player.y + player.height > enemy.y
+        ) {
+          createExplosion(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.color);
+          enemies.splice(eIndex, 1);
+          player.shield -= 25;
+          updateHUD();
+          if (player.shield <= 0) gameOver();
+        }
+
+        // Colisión Bala vs Enemigo
+        bullets.forEach((b, bIndex) => {
+          if (
+            b.x < enemy.x + enemy.width &&
+            b.x + b.width > enemy.x &&
+            b.y < enemy.y + enemy.height &&
+            b.y + b.height > enemy.y
+          ) {
+            enemy.hp--;
+            bullets.splice(bIndex, 1);
+            if (enemy.hp <= 0) {
+              createExplosion(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.color);
+              enemies.splice(eIndex, 1);
+              score += 100 * level;
+              if (score >= level * 1000) {
+                level++;
+              }
+              updateHUD();
+            }
+          }
+        });
+
+        // Enemigo fuera de pantalla
+        if (enemy.y > canvas.height) {
+          enemies.splice(eIndex, 1);
+        }
+      });
+
+      // Partículas
+      particles.forEach((p, pIndex) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.03;
+        if (p.alpha <= 0) particles.splice(pIndex, 1);
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Dibujar Fondo Estelar
+      ctx.fillStyle = '#ffffff';
+      stars.forEach(star => {
+        ctx.globalAlpha = Math.random() * 0.5 + 0.3;
+        ctx.fillRect(star.x, star.y, star.size, star.size);
+      });
+      ctx.globalAlpha = 1.0;
+
+      // Dibujar Nave Jugador (Vectorial)
+      ctx.strokeStyle = player.color;
+      ctx.fillStyle = '#050508';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = player.color;
+
+      ctx.beginPath();
+      ctx.moveTo(player.x + player.width / 2, player.y);
+      ctx.lineTo(player.x + player.width, player.y + player.height);
+      ctx.lineTo(player.x + player.width / 2, player.y + player.height - 8);
+      ctx.lineTo(player.x, player.y + player.height);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Dibujar Balas
+      ctx.fillStyle = '#00f0ff';
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 8;
+      bullets.forEach(b => {
+        ctx.fillRect(b.x, b.y, b.width, b.height);
+      });
+
+      // Dibujar Enemigos
+      enemies.forEach(enemy => {
+        ctx.strokeStyle = enemy.color;
+        ctx.shadowColor = enemy.color;
+        ctx.shadowBlur = 10;
+        ctx.strokeRect(enemy.x, enemy.y, enemy.width, enemy.height);
+        ctx.fillStyle = 'rgba(255, 0, 127, 0.2)';
+        ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+      });
+
+      // Dibujar Partículas
+      particles.forEach(p => {
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 5;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      });
+      ctx.globalAlpha = 1.0;
+      ctx.shadowBlur = 0;
+    }
+
+    function gameLoop() {
+      if (!gameActive) return;
+      update();
+      draw();
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    // Inicializar Fondo UI
+    initStars();
+    function drawMenuBackground() {
+      if (gameActive) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      stars.forEach(star => {
+        star.y += star.speed * 0.2;
+        if (star.y > canvas.height) star.y = 0;
+        ctx.fillRect(star.x, star.y, star.size, star.size);
+      });
+      requestAnimationFrame(drawMenuBackground);
+    }
+    drawMenuBackground();
+  </script>
+</body>
+</html>
